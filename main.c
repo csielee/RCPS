@@ -17,8 +17,11 @@ char use_str[STRING_SIZE];
 
 //RCPS
 #define RCPS_number 4
+#define averageV 2000
 char Rcommand[10];
-int currentA[RCPS_number];
+double currentA[RCPS_number];
+int TimerStep[RCPS_number];
+short int TimerEnable[RCPS_number];
 
 void DelayMs(unsigned int ms)
 {
@@ -145,7 +148,7 @@ char UCA1read() {
     return 0;
 }
 
-void UCA1readstr(char * str) {
+/*void UCA1readstr(char * str) {
   char ch;
   int count=0;
   while(1)
@@ -157,14 +160,14 @@ void UCA1readstr(char * str) {
       break;
   }
   str[count] = 0;
-}
+}*/
 
-void UCA1clear()
+/*void UCA1clear()
 {
   rx1_b = (rx1_f + 1) % STRING_SIZE;
-}
+}*/
 
-int UCA1find(const char *str)
+/*int UCA1find(const char *str)
 {
   int count=0,len = strlen(str);
   char ch;
@@ -185,7 +188,7 @@ int UCA1find(const char *str)
     else
       count = 0;
   }
-}
+}*/
 
 //esp8266 wifi
 #define ESPprint UCA0print
@@ -213,12 +216,12 @@ int ESP_receiveData(char* str)
   ESPfind("+IPD",0);
   ESPreadstr(send_str);
   //debug
-  UCA1print(send_str);
+  //UCA1print(send_str);
   //debug
   sscanf(send_str,",%d,%d:GET /%s",&id,&length,str);
   //debug
-  sprintf(send_str,"id : %d,length : %d,str : [%s]\r\n",id,length,str);
-  UCA1print(send_str);
+  //sprintf(send_str,"id : %d,length : %d,str : [%s]\r\n",id,length,str);
+  //UCA1print(send_str);
   //debug
   ESPreadwait();
   ESPclear();
@@ -229,7 +232,8 @@ int ESP_sendData(int id,char *msg)
 {
   int len = strlen(msg),re,count=0;
   char command[30];
-  sprintf(send_str,"HTTP/1.1 200 OK\r\nLocation: http://192.168.4.1/\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %d\r\n\r\n%s",len,msg);
+  //sprintf(send_str,"HTTP/1.1 200 OK\r\nLocation: http://192.168.4.1/\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %d\r\n\r\n%s",len,msg);
+  sprintf(send_str,"HTTP/1.1 200 OK\r\nLocation: \r\nContent-Type: \r\nContent-Length: %d\r\n\r\n%s",len,msg);
   len = strlen(send_str);
   sprintf(command,"AT+CIPSEND=%d,%d\r\n",id,len);
   do {
@@ -304,7 +308,7 @@ int ESP_OK()
     if(i == OK_l)
       return 1;
   }
-  return 2;
+  //return 2;
 }
 
 int main( void )
@@ -336,9 +340,7 @@ int main( void )
   ADC12MCTL2 = ADC12INCH_2;
   ADC12MCTL3 = ADC12EOS | ADC12INCH_3;
   ADC12IE = 0x0F;
-  
-  
-  
+
   //timer
   TA0CCR0 = 16384;
   TA0CCTL0 = CCIE;
@@ -372,7 +374,12 @@ int main( void )
   rx1_b=1;
   int id,re,i;
   char command[50];
-  int Rcommand_number;
+  int Rcommand_number,Rcommand_number2;
+  for(int k=0;k<RCPS_number;k++)
+  {
+    TimerEnable[k] = 0;
+    TimerStep[k] = 0;
+  }
   
   DelayMs(1000);
   __bis_SR_register(GIE);       // Enter interrupts enabled
@@ -381,21 +388,21 @@ int main( void )
   
   ESPclear();
   ESPprint("AT+CIPMUX=1\r\n");
-  re = ESP_OK();
+  ESP_OK();
   ESPclear();
-  sprintf(command,"CIPMUX:%d\r\n",re);
-  UCA1print(command);
+  //sprintf(command,"CIPMUX:%d\r\n",re);
+  //UCA1print(command);
   ESPprint("AT+CIPSERVER=1,80\r\n");
-  re = ESP_OK();
+  ESP_OK();
   ESPclear();
-  sprintf(command,"CIPSERVER:%d\r\n",re);
-  UCA1print(command);
+  //sprintf(command,"CIPSERVER:%d\r\n",re);
+  //UCA1print(command); 
   
   //turn off
-  TA0CCR0 =  8192;
-  
+  TA0CCR0 =  8192; 
   //loop
   ADC12CTL0 |= ADC12ENC | ADC12ON | ADC12SC;
+  //UCA1print("X");
   while(1)
   {
     TA0CTL = TASSEL_1 | MC_0 | TACLR;
@@ -414,8 +421,8 @@ int main( void )
       else
         DelayMs(500);
       re = ESP_OK();
-      sprintf(use_str,"%s:%d\r\n",command,re);
-      UCA1print(use_str);
+      //sprintf(use_str,"%s:%d\r\n",command,re);
+      //UCA1print(use_str);
       for(i=0;ESPavailable();i++)
       {
         use_str[i] = ESPread();
@@ -427,43 +434,41 @@ int main( void )
       int use_str_t=0,query=0;
       sprintf((use_str+use_str_t),"RCPS command : %s\n",command);
       use_str_t = strlen(use_str);
-      Rcommand_number = -1;
-      //re = sscanf(command,"RCPS+%[^=]=%d",Rcommand,&Rcommand_number);
-      //int i;
       for(i=5;command[i]!='\0';i++)
       {
           if(command[i]=='=' || command[i]=='@')
             break;
           Rcommand[i-5]=command[i];
       }
-      for(;command[i]!='\0';i++)
-      {
-        if(command[i]=='=')
-        {
-          Rcommand_number = 0;
-          continue;
-        }
-        if(command[i]=='@')
-        {
-          query=1;
-          break;
-        }
-        
-        if(command[i]>='0' && command[i]<='9')
-        {
-          Rcommand_number = Rcommand_number*10 + (command[i]-'0');
-        }
-        else
-          break;
-      }
-      
+      Rcommand[i-5]='\0';    
       //debug
-      UCA1print(Rcommand);
-      UCA1print("\r\n");
+      //UCA1print(Rcommand);
+      //UCA1print("\r\n");
 
       if(strcmp(Rcommand,"CP")==0)
       {
-        //P1OUT.bit0;
+        Rcommand_number = -1;
+        for(;command[i]!='\0';i++)
+        {
+          if(command[i]=='=')
+          {
+            Rcommand_number = 0;
+            continue;
+          }
+          if(command[i]=='@')
+          {
+            query=1;
+            break;
+          }
+        
+          if(command[i]>='0' && command[i]<='9')
+          {
+            Rcommand_number = Rcommand_number*10 + (command[i]-'0');
+          }
+          else
+            break;
+        }
+        
         if(query==1)
         {
           Rcommand_number = (P1OUT & 0x3C)>>2;
@@ -485,6 +490,65 @@ int main( void )
           sprintf((use_str+use_str_t),"ERROR ARGUMENT\n");
         }
       }
+      else if(strcmp(Rcommand,"TIME")==0) //³]©w­Ë¼Æ­p®É
+      {
+        Rcommand_number = -1;
+        Rcommand_number2 = -1; 
+        for(;command[i]!='\0';i++)
+        {
+          if(command[i]=='=')
+          {
+            Rcommand_number = 0;
+            continue;
+          }
+          if(command[i]=='@')
+          {
+            query=1;
+            i++;
+            break;
+          }
+        
+          if(command[i]>='0' && command[i]<='9')
+          {
+            Rcommand_number = Rcommand_number*10 + (command[i]-'0');
+          }
+          else
+            break;
+        }
+        for(;command[i]!='\0';i++)
+        {
+          if(command[i]==',')
+          {
+            Rcommand_number2 = 0;
+            continue;
+          }
+          
+          if(command[i]>='0' && command[i]<='9')
+          {
+            Rcommand_number2 = Rcommand_number2*10 + (command[i]-'0');
+          }
+          else
+            break;
+        }
+        if(Rcommand_number < RCPS_number && Rcommand_number >=0)
+        {
+          TimerEnable[Rcommand_number] = 1;
+          TimerStep[Rcommand_number] = Rcommand_number2;
+          sprintf((use_str+use_str_t),"OK\n");
+        }
+        else
+          sprintf((use_str+use_str_t),"ERROR\n");
+      }
+      else if(strcmp(Rcommand,"STATUS")==0)//±o¨ì¹q¬yª¬ºA
+      {
+        /*for(int k=0;k<RCPS_number;k++)
+        {
+          sprintf((use_str+use_str_t),"%lf\n",currentA[k]);
+          use_str_t = strlen(use_str);
+        }*/
+        //sprintf((use_str+use_str_t),"OK\n");
+        sprintf((use_str+use_str_t),"%d\n%d\n%d\n%d\nOK\n",(int)currentA[0],(int)currentA[1],(int)currentA[2],(int)currentA[3]);
+      }
       else
       {
         sprintf((use_str+use_str_t),"ERROR\n");
@@ -498,16 +562,13 @@ int main( void )
     while(ESP_sendData(id,use_str)!=1) // not OK
     {
       i++;
-      UCA1print("send fail,try again\r\n");
+      //UCA1print("send fail,try again\r\n");
       if(i>10)
         break;
       DelayMs(500);
     }
-    if(i>10)
-      UCA1print("send ERROR\r\n");
-    else
-      UCA1print("send OK\r\n");
-    
+    //UCA1print("send\r\n");
+
     sprintf(command,"AT+CIPCLOSE=%d\r\n",id);
     ESPprint(command);
     ESP_OK();
@@ -570,21 +631,20 @@ __interrupt void ADC12_ISR(void)
   switch(__even_in_range(ADC12IV,36))
   {
   case 6:
-    currentA[0] = ADC12MEM0;
-    //sprintf(use_str,"A0 : %d \r\n",ADC12MEM0;);
-    //UCA1print(use_str);
+    //currentA[0] = ADC12MEM0;
+    currentA[0] = (abs(ADC12MEM0 - averageV)*8.0566);
     break;//MEM0
   case 8: 
-    currentA[1] = ADC12MEM1;
-    //sprintf(use_str,"A1 : %d \r\n",ADC12MEM1);
-    //UCA1print(use_str);
-    //ADC12IFG = 0;
+    //currentA[1] = ADC12MEM1;
+    currentA[1] = (abs(ADC12MEM1 - averageV)*8.0566);
     break;
   case 10: 
-    currentA[2] = ADC12MEM2;
+    //currentA[2] = ADC12MEM2;
+    currentA[2] = (abs(ADC12MEM2 - averageV)*8.0566);
     break;
   case 12: 
-    currentA[3] = ADC12MEM3;
+    //currentA[3] = ADC12MEM3;
+    currentA[3] = (abs(ADC12MEM3 - averageV)*8.0566);
     break;
   default: break;
   }
@@ -593,7 +653,17 @@ __interrupt void ADC12_ISR(void)
 #pragma vector = WDT_VECTOR
 __interrupt void WDT_ISR(void)
 {
-  //ADC12CTL0 |= ADC12SC;
-  sprintf(use_str,"A0 : %d \r\n",currentA[0]);
-  UCA1print(use_str);
+  for(int k=0;k<RCPS_number;k++)
+  {
+    if(TimerEnable[k]==1)
+    {
+      //TimerStep = TimerStep - 1;
+      //TimerStep[k]--;
+      if(--TimerStep[k]==0)
+      {
+        TimerEnable[k] = 0;
+        P1OUT ^= 4<<k;
+      }
+    }
+  }
 }
